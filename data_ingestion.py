@@ -8,6 +8,13 @@ import json
 from typing import List, Dict, Any
 from datetime import datetime
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional
+
 try:
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -196,7 +203,8 @@ def ingest_from_google_sheets(
     credentials_file: str = None,
     sheet_name: str = None,
     quarter: str = None,
-    creator: str = None
+    creator: str = None,
+    namespace: str = None
 ):
     """
     Complete pipeline: Extract from Google Sheets and ingest to Pinecone
@@ -209,6 +217,7 @@ def ingest_from_google_sheets(
         sheet_name: Specific sheet tab name
         quarter: Quarter label (e.g., "2024 Q1")
         creator: Creator name
+        namespace: Namespace to use (auto-determined from quarter if not provided)
     """
     print("=" * 60)
     print("Google Sheets → Pinecone Data Ingestion")
@@ -251,18 +260,37 @@ def ingest_from_google_sheets(
     )
     db.create_index()
     
+    # Determine namespace (use provided, quarter, or default)
+    if namespace:
+        # Use provided namespace
+        print(f"\nUsing namespace: '{namespace}' (from parameter)")
+    elif campaigns and campaigns[0].get('quarter'):
+        # Use quarter as namespace for better data isolation
+        namespace = campaigns[0]['quarter'].replace(' ', '_').lower()
+        print(f"\nUsing namespace: '{namespace}' (based on quarter)")
+    elif quarter:
+        namespace = quarter.replace(' ', '_').lower()
+        print(f"\nUsing namespace: '{namespace}' (from parameter)")
+    else:
+        namespace = "default"
+        print(f"\nUsing default namespace: '{namespace}'")
+    
     # Ingest campaigns
     print("\nIngesting campaigns to Pinecone...")
-    db.ingest_bulk_campaigns(campaigns)
+    db.ingest_bulk_campaigns(campaigns, namespace=namespace)
     
     print("\n" + "=" * 60)
     print("✓ Data ingestion complete!")
     print("=" * 60)
     print(f"\nTotal campaigns ingested: {len(campaigns)}")
+    print(f"Namespace: {namespace}")
     
     # Show stats
-    stats = db.get_stats()
-    print(f"Index total vectors: {stats.get('total_vector_count', 0)}")
+    stats = db.get_stats(namespace=namespace)
+    if isinstance(stats, dict):
+        print(f"Vectors in namespace: {stats.get('vector_count', 0)}")
+    else:
+        print(f"Index total vectors: {stats.total_vector_count if hasattr(stats, 'total_vector_count') else 'N/A'}")
 
 
 def main():

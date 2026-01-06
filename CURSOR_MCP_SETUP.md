@@ -206,3 +206,9 @@ Now every project automatically has access to:
 
 No more `.env` files, no more manual setup per project! 🚀
 
+
+
+
+
+
+

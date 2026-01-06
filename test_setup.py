@@ -6,6 +6,12 @@ Run this to verify your setup is working correctly
 import os
 import sys
 
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    import codecs
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 
 def test_imports():
     """Test if all required packages are installed"""
@@ -13,30 +19,30 @@ def test_imports():
     
     try:
         import pinecone
-        print("✓ pinecone")
+        print("OK pinecone")
     except ImportError:
-        print("✗ pinecone - Run: pip install pinecone")
+        print("FAIL pinecone - Run: pip install pinecone")
         return False
     
     try:
         import openai
-        print("✓ openai")
+        print("OK openai")
     except ImportError:
-        print("✗ openai - Run: pip install openai")
+        print("FAIL openai - Run: pip install openai")
         return False
     
     try:
         import gspread
-        print("✓ gspread")
+        print("OK gspread")
     except ImportError:
-        print("✗ gspread - Run: pip install gspread")
+        print("FAIL gspread - Run: pip install gspread")
         return False
     
     try:
         from oauth2client.service_account import ServiceAccountCredentials
-        print("✓ oauth2client")
+        print("OK oauth2client")
     except ImportError:
-        print("✗ oauth2client - Run: pip install oauth2client")
+        print("FAIL oauth2client - Run: pip install oauth2client")
         return False
     
     return True
@@ -50,14 +56,14 @@ def test_env_vars():
     openai_key = os.getenv('OPENAI_API_KEY')
     
     if pinecone_key:
-        print(f"✓ PINECONE_API_KEY is set ({pinecone_key[:8]}...)")
+        print(f"OK PINECONE_API_KEY is set ({pinecone_key[:8]}...)")
     else:
-        print("✗ PINECONE_API_KEY is not set")
+        print("FAIL PINECONE_API_KEY is not set")
     
     if openai_key:
-        print(f"✓ OPENAI_API_KEY is set ({openai_key[:8]}...)")
+        print(f"OK OPENAI_API_KEY is set ({openai_key[:8]}...)")
     else:
-        print("✗ OPENAI_API_KEY is not set")
+        print("FAIL OPENAI_API_KEY is not set")
     
     return bool(pinecone_key and openai_key)
 
@@ -67,10 +73,10 @@ def test_credentials():
     print("\nTesting Google credentials...")
     
     if os.path.exists('credentials.json'):
-        print("✓ credentials.json found")
+        print("OK credentials.json found")
         return True
     else:
-        print("✗ credentials.json not found")
+        print("FAIL credentials.json not found")
         return False
 
 
@@ -89,20 +95,20 @@ def test_pinecone_connection():
         pc = Pinecone(api_key=api_key)
         indexes = pc.list_indexes()
         
-        print(f"✓ Connected to Pinecone")
+        print(f"OK Connected to Pinecone")
         print(f"  Found {len(indexes)} index(es)")
         
         # Check for our specific index
         index_names = [idx.name for idx in indexes]
         if 'ent-agency-campaigns' in index_names:
-            print("  ✓ 'ent-agency-campaigns' index exists")
+            print("  OK 'ent-agency-campaigns' index exists")
         else:
-            print("  ⚠ 'ent-agency-campaigns' index not found (run pinecone_setup.py)")
+            print("  WARN 'ent-agency-campaigns' index not found (run pinecone_setup.py)")
         
         return True
         
     except Exception as e:
-        print(f"✗ Pinecone connection failed: {e}")
+        print(f"FAIL Pinecone connection failed: {e}")
         return False
 
 
@@ -126,13 +132,13 @@ def test_openai_connection():
             model="text-embedding-3-small"
         )
         
-        print(f"✓ Connected to OpenAI")
+        print(f"OK Connected to OpenAI")
         print(f"  Embedding dimension: {len(response.data[0].embedding)}")
         
         return True
         
     except Exception as e:
-        print(f"✗ OpenAI connection failed: {e}")
+        print(f"FAIL OpenAI connection failed: {e}")
         return False
 
 
@@ -158,7 +164,7 @@ def main():
     
     all_passed = True
     for test_name, passed in results.items():
-        status = "✓ PASS" if passed else "✗ FAIL"
+        status = "PASS" if passed else "FAIL"
         print(f"{status} - {test_name}")
         if not passed:
             all_passed = False
@@ -166,15 +172,15 @@ def main():
     print("\n" + "="*70)
     
     if all_passed:
-        print("🎉 All tests passed! Your setup is ready to use.")
+        print("SUCCESS: All tests passed! Your setup is ready to use.")
         print("\nNext steps:")
         print("1. Run: python data_ingestion.py")
         print("2. Run: python query_interface.py")
     else:
-        print("❌ Some tests failed. Please fix the issues above.")
+        print("ERROR: Some tests failed. Please fix the issues above.")
         print("\nCommon fixes:")
         print("- Install missing packages: pip install -r requirements.txt --break-system-packages")
-        print("- Set API keys: export PINECONE_API_KEY='...' OPENAI_API_KEY='...'")
+        print("- Set API keys (PowerShell): $env:PINECONE_API_KEY='...'; $env:OPENAI_API_KEY='...'")
         print("- Add Google credentials: Save as credentials.json")
     
     print("="*70 + "\n")

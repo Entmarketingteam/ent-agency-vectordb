@@ -1,7 +1,10 @@
 # Environment variables and secrets
 .env
+.env.local
+.env.*.local
 credentials.json
 token.json
+setup_env.ps1
 
 # Python
 __pycache__/

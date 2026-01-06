@@ -7,30 +7,52 @@ import os
 from typing import List, Dict, Any
 from pinecone_setup import ENTAgencyVectorDB
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional
+
 
 class CampaignQueryInterface:
     """Interactive query interface for campaign data"""
     
-    def __init__(self, pinecone_api_key: str, openai_api_key: str):
+    def __init__(self, pinecone_api_key: str, openai_api_key: str, default_namespace: str = "default"):
         self.db = ENTAgencyVectorDB(
             pinecone_api_key=pinecone_api_key,
             openai_api_key=openai_api_key
         )
         self.db.create_index()
+        self.default_namespace = default_namespace
     
-    def search(self, query: str, top_k: int = 10, filters: Dict = None) -> List[Dict]:
+    def search(self, query: str, top_k: int = 10, 
+               namespace: str = None, 
+               filters: Dict = None,
+               use_reranking: bool = True) -> List[Dict]:
         """
-        Search campaigns using natural language
+        Search campaigns using natural language with reranking
         
         Args:
             query: Natural language query
             top_k: Number of results to return
+            namespace: Namespace to search (default: self.default_namespace)
             filters: Optional metadata filters
+            use_reranking: Whether to use reranking (recommended)
         
         Returns:
             List of matching campaigns
         """
-        results = self.db.query(query, top_k=top_k, filter_dict=filters)
+        if namespace is None:
+            namespace = self.default_namespace
+        
+        results = self.db.search(
+            query_text=query, 
+            top_k=top_k, 
+            namespace=namespace,
+            filter_dict=filters,
+            use_reranking=use_reranking
+        )
         return results
     
     def format_results(self, results: List[Dict], show_full: bool = False):
@@ -44,48 +66,63 @@ class CampaignQueryInterface:
         print(f"{'='*80}\n")
         
         for i, result in enumerate(results, 1):
-            metadata = result['metadata']
-            score = result['score']
+            metadata = result.get('metadata', {})
+            score = result.get('score', 0.0)
             
             print(f"Result #{i} (Relevance: {score:.3f})")
             print("-" * 80)
             
-            # Show key fields
-            if 'quarter' in metadata and metadata['quarter']:
-                print(f"📅 Quarter: {metadata['quarter']}")
+            # Show key fields (handle both old and new API formats)
+            quarter = metadata.get('quarter', '')
+            if quarter:
+                print(f"📅 Quarter: {quarter}")
             
-            if 'creator' in metadata and metadata['creator']:
-                print(f"👤 Creator: {metadata['creator']}")
+            creator = metadata.get('creator', '')
+            if creator:
+                print(f"👤 Creator: {creator}")
             
-            if 'brand' in metadata and metadata['brand']:
-                print(f"🏢 Brand: {metadata['brand']}")
+            brand = metadata.get('brand', '')
+            if brand:
+                print(f"🏢 Brand: {brand}")
             
-            if 'campaign_type' in metadata and metadata['campaign_type']:
-                print(f"📱 Type: {metadata['campaign_type']}")
+            campaign_type = metadata.get('campaign_type', '')
+            if campaign_type:
+                print(f"📱 Type: {campaign_type}")
             
-            if 'platform' in metadata and metadata['platform']:
-                print(f"🌐 Platform: {metadata['platform']}")
+            platform = metadata.get('platform', '')
+            if platform:
+                print(f"🌐 Platform: {platform}")
             
-            if 'date' in metadata and metadata['date']:
-                print(f"📆 Date: {metadata['date']}")
+            date = metadata.get('date', '')
+            if date:
+                print(f"📆 Date: {date}")
             
             # Show metrics if available
             metrics = {k.replace('metric_', ''): v for k, v in metadata.items() if k.startswith('metric_')}
             if metrics:
                 print(f"📊 Metrics:")
                 for metric_name, metric_value in metrics.items():
-                    print(f"   • {metric_name}: {metric_value:,}" if isinstance(metric_value, (int, float)) else f"   • {metric_name}: {metric_value}")
+                    if isinstance(metric_value, (int, float)):
+                        print(f"   • {metric_name}: {metric_value:,}")
+                    else:
+                        print(f"   • {metric_name}: {metric_value}")
             
-            if 'revenue' in metadata and metadata['revenue']:
-                print(f"💰 Revenue: ${metadata['revenue']:,.2f}")
+            revenue = metadata.get('revenue')
+            if revenue:
+                try:
+                    print(f"💰 Revenue: ${float(revenue):,.2f}")
+                except:
+                    print(f"💰 Revenue: {revenue}")
             
-            if show_full and 'text' in metadata:
-                print(f"\n📄 Full Content:")
-                print(metadata['text'])
+            if show_full:
+                content = metadata.get('content', metadata.get('text', ''))
+                if content:
+                    print(f"\n📄 Full Content:")
+                    print(content)
             
             print("\n")
     
-    def query_best_performing(self, metric: str = "engagement", quarter: str = None, top_k: int = 5):
+    def query_best_performing(self, metric: str = "engagement", quarter: str = None, top_k: int = 5, namespace: str = None):
         """Find best performing campaigns by a specific metric"""
         query = f"campaigns with high {metric}"
         
@@ -93,32 +130,45 @@ class CampaignQueryInterface:
         if quarter:
             filters['quarter'] = quarter
         
-        results = self.db.query(query, top_k=top_k, filter_dict=filters)
+        if namespace is None:
+            namespace = self.default_namespace
+            if quarter:
+                namespace = quarter.replace(' ', '_').lower()
+        
+        results = self.search(query, top_k=top_k, namespace=namespace, filters=filters)
         
         print(f"\n🏆 Top {top_k} campaigns by {metric}")
         if quarter:
             print(f"   Filtered by: {quarter}")
+        if namespace:
+            print(f"   Namespace: {namespace}")
         
         self.format_results(results)
         return results
     
-    def query_by_brand(self, brand_name: str, top_k: int = 10):
+    def query_by_brand(self, brand_name: str, top_k: int = 10, namespace: str = None):
         """Find all campaigns for a specific brand"""
         filters = {'brand': brand_name}
         query = f"{brand_name} campaigns"
         
-        results = self.db.query(query, top_k=top_k, filter_dict=filters)
+        if namespace is None:
+            namespace = self.default_namespace
+        
+        results = self.search(query, top_k=top_k, namespace=namespace, filters=filters)
         
         print(f"\n🏢 Campaigns for {brand_name}")
         self.format_results(results)
         return results
     
-    def query_by_creator(self, creator_name: str, top_k: int = 10):
+    def query_by_creator(self, creator_name: str, top_k: int = 10, namespace: str = None):
         """Find all campaigns for a specific creator"""
         filters = {'creator': creator_name}
         query = f"{creator_name} campaigns"
         
-        results = self.db.query(query, top_k=top_k, filter_dict=filters)
+        if namespace is None:
+            namespace = self.default_namespace
+        
+        results = self.search(query, top_k=top_k, namespace=namespace, filters=filters)
         
         print(f"\n👤 Campaigns by {creator_name}")
         self.format_results(results)
@@ -134,7 +184,8 @@ class CampaignQueryInterface:
         
         for quarter in quarters:
             filters = {'quarter': quarter}
-            results = self.db.query(topic, top_k=5, filter_dict=filters)
+            namespace = quarter.replace(' ', '_').lower()
+            results = self.search(topic, top_k=5, namespace=namespace, filters=filters)
             
             if results:
                 print(f"\n{quarter}: {len(results)} relevant campaigns")
@@ -142,22 +193,26 @@ class CampaignQueryInterface:
                 total_engagement = 0
                 count = 0
                 for result in results:
-                    if 'metric_engagement' in result['metadata']:
-                        total_engagement += result['metadata']['metric_engagement']
+                    metadata = result.get('metadata', {})
+                    if 'metric_engagement' in metadata:
+                        total_engagement += metadata['metric_engagement']
                         count += 1
                 
                 if count > 0:
                     avg_engagement = total_engagement / count
                     print(f"   Average Engagement: {avg_engagement:,.0f}")
     
-    def compare_creators(self, creator1: str, creator2: str, metric: str = "engagement"):
+    def compare_creators(self, creator1: str, creator2: str, metric: str = "engagement", namespace: str = None):
         """Compare performance between two creators"""
         print(f"\n⚖️  Comparing {creator1} vs {creator2}")
         print("="*80)
         
+        if namespace is None:
+            namespace = self.default_namespace
+        
         # Get campaigns for each creator
-        results1 = self.db.query(f"{creator1} {metric}", top_k=10, filter_dict={'creator': creator1})
-        results2 = self.db.query(f"{creator2} {metric}", top_k=10, filter_dict={'creator': creator2})
+        results1 = self.search(f"{creator1} {metric}", top_k=10, namespace=namespace, filters={'creator': creator1})
+        results2 = self.search(f"{creator2} {metric}", top_k=10, namespace=namespace, filters={'creator': creator2})
         
         print(f"\n{creator1}:")
         print(f"  Total campaigns: {len(results1)}")
@@ -191,17 +246,20 @@ class CampaignQueryInterface:
                 # Parse query for filters
                 filters = {}
                 
-                # Extract quarter filter
+                # Extract quarter filter and determine namespace
+                namespace = self.default_namespace
                 quarters = ["Q1", "Q2", "Q3", "Q4"]
                 for q in quarters:
                     if q in query.upper():
                         for year in ["2023", "2024", "2025"]:
                             if year in query:
-                                filters['quarter'] = f"{year} {q}"
+                                quarter_str = f"{year} {q}"
+                                filters['quarter'] = quarter_str
+                                namespace = quarter_str.replace(' ', '_').lower()
                                 break
                 
                 # Search
-                results = self.search(query, top_k=10, filters=filters or None)
+                results = self.search(query, top_k=10, namespace=namespace, filters=filters or None)
                 self.format_results(results)
                 
             except KeyboardInterrupt:
