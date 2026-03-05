@@ -130,3 +130,4 @@ This will show:
 **Everything else is ready!** Once packages are installed, you're just minutes away from having a working vector database. 🎉
 
 
+
